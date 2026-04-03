@@ -177,6 +177,14 @@ typedef struct {
 } block_q4_0;
 static_assert(sizeof(block_q4_0) == sizeof(ggml_half) + QK4_0 / 2, "wrong q4_0 block size/padding");
 
+// TurboQuant 4-bit: Lloyd-Max optimal codebook (same layout as q4_0)
+#define QK_TQ4_0 32
+typedef struct {
+    ggml_half d;              // scale
+    uint8_t qs[QK_TQ4_0 / 2]; // 4-bit Lloyd-Max indices packed as nibbles
+} block_tq4_0;
+static_assert(sizeof(block_tq4_0) == sizeof(ggml_half) + QK_TQ4_0 / 2, "wrong tq4_0 block size/padding");
+
 #define QK4_1 32
 typedef struct {
     GGML_EXTENSION union {

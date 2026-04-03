@@ -9,6 +9,12 @@
 #include <string>
 #include <unordered_map>
 
+// TQ4_0 has identical block layout to Q4_0 — reuse Q4_0 Metal kernels
+static const char * ggml_metal_type_name(ggml_type type) {
+    if (type == GGML_TYPE_TQ4_0) return ggml_type_name(GGML_TYPE_Q4_0);
+    return ggml_type_name(type);
+}
+
 struct ggml_metal_device_deleter {
     void operator()(ggml_metal_device_t ctx) {
         ggml_metal_device_free(ctx);
@@ -165,7 +171,7 @@ ggml_metal_pipeline_with_params ggml_metal_library_get_pipeline_set_rows(ggml_me
     char base[256];
     char name[256];
 
-    snprintf(base, 256, "kernel_set_rows_%s_%s", ggml_type_name(tdst), ggml_type_name(tidx));
+    snprintf(base, 256, "kernel_set_rows_%s_%s", ggml_metal_type_name(tdst), ggml_type_name(tidx));
     snprintf(name, 256, "%s", base);
 
     ggml_metal_pipeline_with_params res = ggml_metal_library_get_pipeline(lib, name);
@@ -1323,7 +1329,7 @@ ggml_metal_pipeline_with_params ggml_metal_library_get_pipeline_flash_attn_ext(
 
     snprintf(base, 256, "kernel_%s_%s_dk%d_dv%d",
             "flash_attn_ext",
-            ggml_type_name(op->src[1]->type),
+            ggml_metal_type_name(op->src[1]->type),
             dk,
             dv);
 
@@ -1386,7 +1392,7 @@ ggml_metal_pipeline_with_params ggml_metal_library_get_pipeline_flash_attn_ext_v
 
     snprintf(base, 256, "kernel_%s_%s_dk%d_dv%d",
             "flash_attn_ext_vec",
-            ggml_type_name(op->src[1]->type),
+            ggml_metal_type_name(op->src[1]->type),
             dk,
             dv);
 

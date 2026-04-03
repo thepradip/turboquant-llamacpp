@@ -383,6 +383,7 @@ const std::vector<ggml_type> kv_cache_types = {
     GGML_TYPE_BF16,
     GGML_TYPE_Q8_0,
     GGML_TYPE_Q4_0,
+    GGML_TYPE_TQ4_0,
     GGML_TYPE_Q4_1,
     GGML_TYPE_IQ4_NL,
     GGML_TYPE_Q5_0,
@@ -2020,6 +2021,14 @@ common_params_context common_params_parser_init(common_params & params, llama_ex
             params.cache_type_v = kv_cache_type_from_str(value);
         }
     ).set_env("LLAMA_ARG_CACHE_TYPE_V"));
+    add_opt(common_arg(
+        {"--turbo"},
+        "use TurboQuant TQ4_0 for both K and V cache (shorthand for -ctk tq4_0 -ctv tq4_0)",
+        [](common_params & params) {
+            params.cache_type_k = GGML_TYPE_TQ4_0;
+            params.cache_type_v = GGML_TYPE_TQ4_0;
+        }
+    ));
     add_opt(common_arg(
         {"--hellaswag"},
         "compute HellaSwag score over random tasks from datafile supplied with -f",

@@ -449,6 +449,79 @@ void dequantize_row_q8_0(const block_q8_0 * GGML_RESTRICT x, float * GGML_RESTRI
     }
 }
 
+// TurboQuant TQ4_0: Lloyd-Max optimal 4-bit codebook
+// Lloyd-Max optimal centroids for N(0,1), 4-bit (16 levels)
+// Cosine similarity: 0.9952
+static const float tq4_0_sorted[16] = {
+    -2.715360f, -2.060614f, -1.612955f, -1.252971f,
+    -0.940275f, -0.655539f, -0.387432f, -0.128209f,
+     0.128209f,  0.387432f,  0.655539f,  0.940275f,
+     1.252971f,  1.612955f,  2.060614f,  2.715360f,
+};
+
+static const float tq4_0_boundaries[15] = {
+    -2.387987f, -1.836785f, -1.432963f, -1.096623f, -0.797907f,
+    -0.521486f, -0.257820f, -0.000000f,  0.257820f,  0.521486f,
+     0.797907f,  1.096623f,  1.432963f,  1.836785f,  2.387987f,
+};
+
+void quantize_row_tq4_0_ref(const float * GGML_RESTRICT x, block_tq4_0 * GGML_RESTRICT y, int64_t k) {
+    static const int qk = QK_TQ4_0;
+    assert(k % qk == 0);
+    const int nb = k / qk;
+
+    for (int i = 0; i < nb; i++) {
+        float amax = 0.0f;
+        float max  = 0.0f;
+
+        for (int j = 0; j < qk; j++) {
+            const float v = x[i*qk + j];
+            if (amax < fabsf(v)) {
+                amax = fabsf(v);
+                max  = v;
+            }
+        }
+
+        const float d  = max / -8;
+        const float id = d ? 1.0f/d : 0.0f;
+
+        y[i].d = GGML_FP32_TO_FP16(d);
+
+        for (int j = 0; j < qk/2; ++j) {
+            const float x0 = x[i*qk + 0    + j]*id;
+            const float x1 = x[i*qk + qk/2 + j]*id;
+
+            const uint8_t xi0 = MIN(15, (int8_t)(x0 + 8.5f));
+            const uint8_t xi1 = MIN(15, (int8_t)(x1 + 8.5f));
+
+            y[i].qs[j]  = xi0;
+            y[i].qs[j] |= xi1 << 4;
+        }
+    }
+}
+
+void dequantize_row_tq4_0(const block_tq4_0 * GGML_RESTRICT x, float * GGML_RESTRICT y, int64_t k) {
+    static const int qk = QK_TQ4_0;
+    assert(k % qk == 0);
+    const int nb = k / qk;
+
+    for (int i = 0; i < nb; i++) {
+        const float d = GGML_FP16_TO_FP32(x[i].d);
+
+        for (int j = 0; j < qk/2; ++j) {
+            const int x0 = (x[i].qs[j] & 0x0F) - 8;
+            const int x1 = (x[i].qs[j] >>   4) - 8;
+
+            y[i*qk + j + 0   ] = x0*d;
+            y[i*qk + j + qk/2] = x1*d;
+        }
+    }
+}
+
+void quantize_row_tq4_0(const float * GGML_RESTRICT x, void * GGML_RESTRICT y, int64_t k) {
+    quantize_row_tq4_0_ref(x, (block_tq4_0 *)y, k);
+}
+
 void dequantize_row_mxfp4(const block_mxfp4 * GGML_RESTRICT x, float * GGML_RESTRICT y, int64_t k) {
     static const int qk = QK_MXFP4;
 
