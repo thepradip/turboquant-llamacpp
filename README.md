@@ -1,8 +1,64 @@
-# llama.cpp
+# turboquant-llamacpp
 
-![llama](https://user-images.githubusercontent.com/1991296/230134379-7181e485-c521-4d23-a0d6-f7b3b61ba524.png)
+TurboQuant `--turbo` KV cache compression for [llama.cpp](https://github.com/ggml-org/llama.cpp). Adds Lloyd-Max optimal 4-bit KV cache quantization with 3.56x memory reduction.
+
+Works on: **macOS (Metal)** | **Linux (CUDA)** | **CPU**
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+
+---
+
+## Install
+
+```bash
+git clone https://github.com/thepradip/turboquant-llamacpp.git
+cd turboquant-llamacpp
+
+# macOS (Metal)
+cmake -B build -DGGML_METAL=ON
+cmake --build build --config Release -j$(sysctl -n hw.ncpu)
+
+# Linux (CUDA)
+# cmake -B build -DGGML_CUDA=ON
+# cmake --build build --config Release -j$(nproc)
+
+# CPU only
+# cmake -B build
+# cmake --build build --config Release -j$(nproc)
+```
+
+## Usage
+
+```bash
+# Download any GGUF model
+huggingface-cli download unsloth/gemma-4-E4B-it-GGUF gemma-4-E4B-it-Q4_K_M.gguf --local-dir models/
+
+# Run with --turbo
+./build/bin/llama-cli -m models/gemma-4-E4B-it-Q4_K_M.gguf -ngl 999 -fa 1 --turbo \
+    -p "What is the capital of France?" -n 100 --single-turn
+```
+
+`--turbo` is shorthand for `-ctk tq4_0 -ctv tq4_0`.
+
+## Memory savings (Gemma 4 E4B, M2 Pro)
+
+| Context | FP16 KV | --turbo KV | Reduction |
+|---------|---------|------------|-----------|
+| 4K | 104 MiB | 29 MiB | 3.58x |
+| 16K | 296 MiB | 83 MiB | 3.56x |
+| 32K | 552 MiB | 155 MiB | 3.56x |
+
+## How it works
+
+Lloyd-Max optimal centroids for N(0,1) distribution, 4-bit (16 levels). Same block layout as Q4_0 — reuses existing Metal and CUDA kernels with zero overhead.
+
+Based on: [TurboQuant (ICLR 2026, arXiv: 2504.19874)](https://arxiv.org/abs/2504.19874)
+
+---
+
+*Below is the original llama.cpp README:*
+
+---
 [![Release](https://img.shields.io/github/v/release/ggml-org/llama.cpp)](https://github.com/ggml-org/llama.cpp/releases)
 [![Server](https://github.com/ggml-org/llama.cpp/actions/workflows/server.yml/badge.svg)](https://github.com/ggml-org/llama.cpp/actions/workflows/server.yml)
 
