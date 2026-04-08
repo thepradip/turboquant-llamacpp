@@ -1174,6 +1174,34 @@ void ggml_vec_dot_iq4_nl_q8_0_generic(int n, float * GGML_RESTRICT s, size_t bs,
     *s = sumf;
 }
 
+// TurboQuant TQ4_0: Lloyd-Max codebook dot product (int8 codebook, like IQ4_NL)
+void ggml_vec_dot_tq4_0_q8_0_generic(int n, float * GGML_RESTRICT s, size_t bs, const void * GGML_RESTRICT vx, size_t bx, const void * GGML_RESTRICT vy, size_t by, int nrc) {
+    assert(nrc == 1);
+    UNUSED(nrc);
+    UNUSED(bx);
+    UNUSED(by);
+    UNUSED(bs);
+    assert(n % QK_TQ4_0 == 0);
+    static_assert(QK_TQ4_0 == QK8_0, "QK_TQ4_0 and QK8_0 must be the same");
+
+    const block_tq4_0 * GGML_RESTRICT x = vx;
+    const block_q8_0  * GGML_RESTRICT y = vy;
+
+    const int nb = n / QK_TQ4_0;
+
+    float sumf = 0;
+    for (int ib = 0; ib < nb; ++ib) {
+        const float d = GGML_CPU_FP16_TO_FP32(x[ib].d) * GGML_CPU_FP16_TO_FP32(y[ib].d);
+        int sumi1 = 0, sumi2 = 0;
+        for (int j = 0; j < QK_TQ4_0/2; ++j) {
+            sumi1 += y[ib].qs[j+         0] * kvalues_tq4_0[x[ib].qs[j] & 0xf];
+            sumi2 += y[ib].qs[j+QK_TQ4_0/2] * kvalues_tq4_0[x[ib].qs[j] >>  4];
+        }
+        sumf += d * (sumi1 + sumi2);
+    }
+    *s = sumf;
+}
+
 void ggml_vec_dot_iq4_xs_q8_K_generic(int n, float * GGML_RESTRICT s, size_t bs, const void * GGML_RESTRICT vx, size_t bx, const void * GGML_RESTRICT vy, size_t by, int nrc) {
     assert(nrc == 1);
     UNUSED(nrc);

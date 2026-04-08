@@ -1108,6 +1108,14 @@ GGML_TABLE_BEGIN(int8_t, kvalues_iq4nl, 16)
     -127, -104, -83, -65, -49, -35, -22, -10, 1, 13, 25, 38, 53, 69, 89, 113,
 GGML_TABLE_END()
 
+// TurboQuant TQ4_0: Lloyd-Max optimal centroids for N(0,1), scaled to int8
+// Float centroids: {-2.7154, -2.0606, -1.6130, -1.2530, -0.9403, -0.6555, -0.3874, -0.1282,
+//                    0.1282,  0.3874,  0.6555,  0.9403,  1.2530,  1.6130,  2.0606,  2.7154}
+// Scale factor: 46.76 (127 / 2.7154)
+GGML_TABLE_BEGIN(int8_t, kvalues_tq4_0, 16)
+    -127, -96, -75, -59, -44, -31, -18, -6, 6, 18, 31, 44, 59, 75, 96, 127,
+GGML_TABLE_END()
+
 // e2m1 values (doubled)
 // ref: https://www.opencompute.org/documents/ocp-microscaling-formats-mx-v1-0-spec-final-pdf
 GGML_TABLE_BEGIN(int8_t, kvalues_mxfp4, 16)

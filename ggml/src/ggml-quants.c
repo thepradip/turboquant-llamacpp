@@ -450,20 +450,37 @@ void dequantize_row_q8_0(const block_q8_0 * GGML_RESTRICT x, float * GGML_RESTRI
 }
 
 // TurboQuant TQ4_0: Lloyd-Max optimal 4-bit codebook
-// Lloyd-Max optimal centroids for N(0,1), 4-bit (16 levels)
-// Cosine similarity: 0.9952
-static const float tq4_0_sorted[16] = {
-    -2.715360f, -2.060614f, -1.612955f, -1.252971f,
-    -0.940275f, -0.655539f, -0.387432f, -0.128209f,
-     0.128209f,  0.387432f,  0.655539f,  0.940275f,
-     1.252971f,  1.612955f,  2.060614f,  2.715360f,
-};
+// Float centroids for reference (int8 approximation in kvalues_tq4_0):
+// {-2.7154, -2.0606, -1.6130, -1.2530, -0.9403, -0.6555, -0.3874, -0.1282,
+//   0.1282,  0.3874,  0.6555,  0.9403,  1.2530,  1.6130,  2.0606,  2.7154}
 
+// Decision boundaries for bin assignment (midpoints between adjacent centroids)
 static const float tq4_0_boundaries[15] = {
     -2.387987f, -1.836785f, -1.432963f, -1.096623f, -0.797907f,
     -0.521486f, -0.257820f, -0.000000f,  0.257820f,  0.521486f,
      0.797907f,  1.096623f,  1.432963f,  1.836785f,  2.387987f,
 };
+
+// Branch-free bin search: count how many boundaries the value exceeds
+static inline uint8_t tq4_0_find_bin(float x) {
+    uint8_t idx = 0;
+    idx += (x > tq4_0_boundaries[ 0]);
+    idx += (x > tq4_0_boundaries[ 1]);
+    idx += (x > tq4_0_boundaries[ 2]);
+    idx += (x > tq4_0_boundaries[ 3]);
+    idx += (x > tq4_0_boundaries[ 4]);
+    idx += (x > tq4_0_boundaries[ 5]);
+    idx += (x > tq4_0_boundaries[ 6]);
+    idx += (x > tq4_0_boundaries[ 7]);
+    idx += (x > tq4_0_boundaries[ 8]);
+    idx += (x > tq4_0_boundaries[ 9]);
+    idx += (x > tq4_0_boundaries[10]);
+    idx += (x > tq4_0_boundaries[11]);
+    idx += (x > tq4_0_boundaries[12]);
+    idx += (x > tq4_0_boundaries[13]);
+    idx += (x > tq4_0_boundaries[14]);
+    return idx;
+}
 
 void quantize_row_tq4_0_ref(const float * GGML_RESTRICT x, block_tq4_0 * GGML_RESTRICT y, int64_t k) {
     static const int qk = QK_TQ4_0;
@@ -471,31 +488,46 @@ void quantize_row_tq4_0_ref(const float * GGML_RESTRICT x, block_tq4_0 * GGML_RE
     const int nb = k / qk;
 
     for (int i = 0; i < nb; i++) {
-        float amax = 0.0f;
-        float max  = 0.0f;
-
+        // Step 1: Compute RMS of the block
+        float sumsq = 0.0f;
         for (int j = 0; j < qk; j++) {
-            const float v = x[i*qk + j];
-            if (amax < fabsf(v)) {
-                amax = fabsf(v);
-                max  = v;
-            }
+            sumsq += x[i*qk + j] * x[i*qk + j];
+        }
+        const float rms = sqrtf(sumsq / qk);
+
+        if (rms < 1e-10f) {
+            // Zero block
+            y[i].d = GGML_FP32_TO_FP16(0.0f);
+            memset(y[i].qs, 0, qk/2);
+            continue;
         }
 
-        const float d  = max / -8;
-        const float id = d ? 1.0f/d : 0.0f;
+        const float irms = 1.0f / rms;
 
+        // Step 2: Normalize and quantize using Lloyd-Max boundaries
+        uint8_t indices[QK_TQ4_0];
+        for (int j = 0; j < qk; j++) {
+            indices[j] = tq4_0_find_bin(x[i*qk + j] * irms);
+        }
+
+        // Step 3: Compute least-squares optimal scale against int8 codebook
+        // d = sum(x_j * ival_j) / sum(ival_j^2)
+        // Uses int8 codebook so d is consistent with both dequant and vec_dot
+        float dot_xi = 0.0f;
+        float dot_ii = 0.0f;
+        for (int j = 0; j < qk; j++) {
+            const float iv = (float)kvalues_tq4_0[indices[j]];
+            dot_xi += x[i*qk + j] * iv;
+            dot_ii += iv * iv;
+        }
+        const float d = (dot_ii > 0.0f) ? (dot_xi / dot_ii) : 0.0f;
+
+        // Step 4: Store scale (dequant = d * kvalues_tq4_0[idx], vec_dot uses same)
         y[i].d = GGML_FP32_TO_FP16(d);
 
+        // Step 5: Pack 4-bit indices as nibble pairs
         for (int j = 0; j < qk/2; ++j) {
-            const float x0 = x[i*qk + 0    + j]*id;
-            const float x1 = x[i*qk + qk/2 + j]*id;
-
-            const uint8_t xi0 = MIN(15, (int8_t)(x0 + 8.5f));
-            const uint8_t xi1 = MIN(15, (int8_t)(x1 + 8.5f));
-
-            y[i].qs[j]  = xi0;
-            y[i].qs[j] |= xi1 << 4;
+            y[i].qs[j] = indices[j] | (indices[j + qk/2] << 4);
         }
     }
 }
@@ -509,11 +541,12 @@ void dequantize_row_tq4_0(const block_tq4_0 * GGML_RESTRICT x, float * GGML_REST
         const float d = GGML_FP16_TO_FP32(x[i].d);
 
         for (int j = 0; j < qk/2; ++j) {
-            const int x0 = (x[i].qs[j] & 0x0F) - 8;
-            const int x1 = (x[i].qs[j] >>   4) - 8;
+            const uint8_t idx0 = x[i].qs[j] & 0x0F;
+            const uint8_t idx1 = x[i].qs[j] >>   4;
 
-            y[i*qk + j + 0   ] = x0*d;
-            y[i*qk + j + qk/2] = x1*d;
+            // Lloyd-Max int8 codebook lookup (consistent with vec_dot path)
+            y[i*qk + j + 0   ] = kvalues_tq4_0[idx0] * d;
+            y[i*qk + j + qk/2] = kvalues_tq4_0[idx1] * d;
         }
     }
 }
